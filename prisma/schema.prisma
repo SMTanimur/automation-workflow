@@ -14,12 +14,14 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  name      String?
-  password  String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(cuid())
+  email       String   @unique
+  name        String
+  password    String
+  companyName String?
+  avatar      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
   
   workflows      Workflow[]
   emailTemplates EmailTemplate[]
@@ -67,14 +69,19 @@ model Edge {
 }
 
 model EmailTemplate {
-  id        String   @id @default(cuid())
-  name      String
-  subject   String
-  content   String   // HTML content
-  json      String   // JSON structure for email builder
-  userId    String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(cuid())
+  name        String
+  subject     String
+  previewText String?
+  category    String   @default("general")
+  status      String   @default("draft") // draft, published
+  content     String?  // HTML content
+  design      String?  // JSON structure for email builder
+  html        String?  // Generated HTML
+  userId      String
+  usageCount  Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
   
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
