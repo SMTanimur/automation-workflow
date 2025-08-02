@@ -8,11 +8,11 @@
     "start": "next start",
     "lint": "next lint",
     "db:push": "prisma db push",
-    "db:seed": "tsx prisma/seed.ts",
-    "db:push:seed": "prisma db push && tsx prisma/seed.ts"
+    "db:seed": "bun prisma/seed.ts",
+    "db:push:seed": "prisma db push && bun prisma/seed.ts"
   },
   "prisma": {
-    "seed": "tsx prisma/seed.ts"
+    "seed": "bun prisma/seed.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.1",
