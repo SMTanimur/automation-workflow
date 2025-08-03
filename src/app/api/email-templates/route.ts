@@ -1,116 +1,119 @@
-import { NextRequest, NextResponse } from 'next/server'
-
-// Mock database storage - in production, this would be a real database
-let templates: any[] = [
-  {
-    id: '1',
-    name: 'Welcome Email',
-    subject: 'Welcome to our platform!',
-    previewText: 'Here\'s what you need to know to get started...',
-    category: 'welcome',
-    design: {
-      counters: {},
-      body: {
-        rows: [
-          {
-            columns: [
-              {
-                contents: [
-                  {
-                    type: 'text',
-                    values: {
-                      text: '<h2>Welcome to our platform!</h2><p>We\'re excited to have you on board.</p>',
-                      textAlign: 'center',
-                      fontSize: 16,
-                      fontFamily: 'Arial',
-                      lineHeight: 1.5
-                    }
-                  }
-                ]
-              }
-            ]
-          }
-        ]
-      }
-    },
-    html: '<!DOCTYPE html><html><head><style>body{font-family:Arial,sans-serif;margin:0;padding:20px;}</style></head><body><h2>Welcome to our platform!</h2><p>We\'re excited to have you on board.</p></body></html>',
-    status: 'published',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    usageCount: 150
-  },
-  {
-    id: '2',
-    name: 'Newsletter Template',
-    subject: 'Monthly Newsletter - January 2024',
-    previewText: 'Check out our latest updates and features',
-    category: 'newsletter',
-    design: {},
-    html: '<!DOCTYPE html><html><head><style>body{font-family:Arial,sans-serif;margin:0;padding:20px;}</style></head><body><h1>Monthly Newsletter</h1><p>Check out our latest updates and features</p></body></html>',
-    status: 'draft',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    usageCount: 89
-  }
-]
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/db';
+import { getCurrentUser } from '@/lib/auth';
 
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const category = searchParams.get('category')
-    
-    let filteredTemplates = templates
-    
-    if (category && category !== 'all') {
-      filteredTemplates = templates.filter(t => t.category === category)
+    const user = await getCurrentUser();
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    return NextResponse.json({ templates: filteredTemplates })
+    const { searchParams } = new URL(request.url);
+    const category = searchParams.get('category');
+
+    const whereClause: any = { userId: user.userId as string };
+
+    if (category && category !== 'all') {
+      whereClause.category = category;
+    }
+
+    const templates = await prisma.emailTemplate.findMany({
+      where: whereClause,
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // Transform the data to match frontend expectations
+    const transformedTemplates = templates.map(template => ({
+      id: template.id,
+      name: template.name,
+      subject: template.subject,
+      previewText: template.previewText || '',
+      category: template.category,
+      design: template.design ? JSON.parse(template.design) : {},
+      html: template.html || '',
+      status: template.status,
+      createdAt: template.createdAt.toISOString(),
+      updatedAt: template.updatedAt.toISOString(),
+      usageCount: template.usageCount,
+    }));
+
+    return NextResponse.json({ templates: transformedTemplates });
   } catch (error) {
-    console.error('Error fetching email templates:', error)
+    console.error('Error fetching email templates:', error);
     return NextResponse.json(
       { error: 'Failed to fetch email templates' },
       { status: 500 }
-    )
+    );
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { name, subject, previewText, category, design, html, status = 'draft' } = body
+    const user = await getCurrentUser();
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const body = await request.json();
+    const {
+      name,
+      subject,
+      previewText,
+      category,
+      design,
+      html,
+      status = 'draft',
+    } = body;
 
     // Validate required fields
     if (!name || !subject) {
       return NextResponse.json(
         { error: 'Template name and subject are required' },
         { status: 400 }
-      )
+      );
     }
 
-    // Create new template
-    const newTemplate = {
-      id: Date.now().toString(),
-      name,
-      subject,
-      previewText: previewText || '',
-      category: category || 'marketing',
-      design: design || {},
-      html: html || '',
-      status,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      usageCount: 0
-    }
+    // Create new template in database
+    const newTemplate = await prisma.emailTemplate.create({
+      data: {
+        name,
+        subject,
+        previewText: previewText || '',
+        category: category || 'general',
+        design: design ? JSON.stringify(design) : null,
+        html: html || '',
+        status,
+        userId: user.userId as string,
+      },
+    });
 
-    templates.push(newTemplate)
+    // Transform the response
+    const transformedTemplate = {
+      id: newTemplate.id,
+      name: newTemplate.name,
+      subject: newTemplate.subject,
+      previewText: newTemplate.previewText || '',
+      category: newTemplate.category,
+      design: newTemplate.design ? JSON.parse(newTemplate.design) : {},
+      html: newTemplate.html || '',
+      status: newTemplate.status,
+      createdAt: newTemplate.createdAt.toISOString(),
+      updatedAt: newTemplate.updatedAt.toISOString(),
+      usageCount: newTemplate.usageCount,
+    };
 
-    return NextResponse.json({ template: newTemplate }, { status: 201 })
+    return NextResponse.json(
+      { template: transformedTemplate },
+      { status: 201 }
+    );
   } catch (error) {
-    console.error('Error creating email template:', error)
+    console.error('Error creating email template:', error);
     return NextResponse.json(
       { error: 'Failed to create email template' },
       { status: 500 }
-    )
+    );
   }
 }

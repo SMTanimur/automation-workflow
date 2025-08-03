@@ -1,97 +1,239 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/db';
+import { getCurrentUser } from '@/lib/auth';
 
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
   try {
-    const { id } = params
+    const user = await getCurrentUser();
 
-    // Mock workflow data - in real app, this would fetch from database
-    const workflow = {
-      id,
-      name: 'Welcome Series',
-      description: 'Send welcome email to new users',
-      isActive: true,
-      createdAt: new Date().toISOString(),
-      lastRun: new Date(Date.now() - 86400000).toISOString(), // 1 day ago
-      totalRuns: 1250,
-      successRate: 98,
-      nodes: [
-        {
-          id: '1',
-          type: 'trigger',
-          position: { x: 100, y: 100 },
-          data: { label: 'Start', event: 'user_signup' }
-        },
-        {
-          id: '2',
-          type: 'email',
-          position: { x: 300, y: 100 },
-          data: { label: 'Welcome Email', templateId: '1' }
-        },
-        {
-          id: '3',
-          type: 'end',
-          position: { x: 500, y: 100 },
-          data: { label: 'End' }
-        }
-      ],
-      edges: [
-        { id: 'e1-2', source: '1', target: '2' },
-        { id: 'e2-3', source: '2', target: '3' }
-      ]
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    return NextResponse.json({ workflow })
+    const { id } = params;
+
+    const workflow = await prisma.workflow.findFirst({
+      where: {
+        id,
+        userId: user.userId as string,
+      },
+      include: {
+        nodes: true,
+        edges: true,
+      },
+    });
+
+    if (!workflow) {
+      return NextResponse.json(
+        { error: 'Workflow not found' },
+        { status: 404 }
+      );
+    }
+
+    // Transform the data to match frontend expectations
+    const transformedWorkflow = {
+      id: workflow.id,
+      name: workflow.name,
+      description: workflow.description || '',
+      isActive: workflow.isActive,
+      createdAt: workflow.createdAt.toISOString(),
+      lastRun: workflow.lastRun?.toISOString() || null,
+      totalRuns: workflow.totalRuns,
+      successRate: workflow.successRate,
+      nodes: workflow.nodes.map(node => ({
+        id: node.id,
+        type: node.type,
+        position: { x: node.positionX, y: node.positionY },
+        data: JSON.parse(node.data),
+      })),
+      edges: workflow.edges.map(edge => ({
+        id: edge.id,
+        source: edge.sourceId,
+        target: edge.targetId,
+      })),
+    };
+
+    return NextResponse.json({ workflow: transformedWorkflow });
   } catch (error) {
-    console.error('Error fetching workflow:', error)
+    console.error('Error fetching workflow:', error);
     return NextResponse.json(
       { error: 'Failed to fetch workflow' },
       { status: 500 }
-    )
+    );
   }
 }
 
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
   try {
-    const { id } = params
-    const body = await request.json()
-    const { name, description, nodes, edges } = body
+    const user = await getCurrentUser();
 
-    // Update workflow - in real app, this would update database
-    const updatedWorkflow = {
-      id,
-      name: name || 'Updated Workflow',
-      description: description || '',
-      nodes: nodes || [],
-      edges: edges || [],
-      updatedAt: new Date().toISOString()
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    return NextResponse.json({ 
+    const { id } = params;
+    const body = await request.json();
+    const { name, description, nodes, edges } = body;
+
+    // Check if workflow exists and belongs to user
+    const existingWorkflow = await prisma.workflow.findFirst({
+      where: {
+        id,
+        userId: user.userId as string,
+      },
+    });
+
+    if (!existingWorkflow) {
+      return NextResponse.json(
+        { error: 'Workflow not found' },
+        { status: 404 }
+      );
+    }
+
+    // Update workflow
+    const updatedWorkflow = await prisma.workflow.update({
+      where: { id },
+      data: {
+        name: name || existingWorkflow.name,
+        description:
+          description !== undefined
+            ? description
+            : existingWorkflow.description,
+      },
+      include: {
+        nodes: true,
+        edges: true,
+      },
+    });
+
+    // Update nodes if provided
+    if (nodes) {
+      // Delete existing nodes
+      await prisma.node.deleteMany({
+        where: { workflowId: id },
+      });
+
+      // Create new nodes
+      await prisma.node.createMany({
+        data: nodes.map((node: any, index: number) => ({
+          type: node.type,
+          positionX: node.position?.x || 100 + index * 200,
+          positionY: node.position?.y || 100,
+          data: JSON.stringify(node.data || {}),
+          workflowId: id,
+        })),
+      });
+    }
+
+    // Update edges if provided
+    if (edges) {
+      // Delete existing edges
+      await prisma.edge.deleteMany({
+        where: { workflowId: id },
+      });
+
+      // Create new edges
+      await prisma.edge.createMany({
+        data: edges.map((edge: any) => ({
+          sourceId: edge.source,
+          targetId: edge.target,
+          workflowId: id,
+        })),
+      });
+    }
+
+    // Fetch updated workflow with nodes and edges
+    const finalWorkflow = await prisma.workflow.findFirst({
+      where: { id },
+      include: {
+        nodes: true,
+        edges: true,
+      },
+    });
+
+    // Transform the response
+    const transformedWorkflow = {
+      id: finalWorkflow!.id,
+      name: finalWorkflow!.name,
+      description: finalWorkflow!.description || '',
+      isActive: finalWorkflow!.isActive,
+      createdAt: finalWorkflow!.createdAt.toISOString(),
+      lastRun: finalWorkflow!.lastRun?.toISOString() || null,
+      totalRuns: finalWorkflow!.totalRuns,
+      successRate: finalWorkflow!.successRate,
+      nodes: finalWorkflow!.nodes.map(node => ({
+        id: node.id,
+        type: node.type,
+        position: { x: node.positionX, y: node.positionY },
+        data: JSON.parse(node.data),
+      })),
+      edges: finalWorkflow!.edges.map(edge => ({
+        id: edge.id,
+        source: edge.sourceId,
+        target: edge.targetId,
+      })),
+    };
+
+    return NextResponse.json({
       message: 'Workflow updated successfully',
-      workflow: updatedWorkflow 
-    })
+      workflow: transformedWorkflow,
+    });
   } catch (error) {
-    console.error('Error updating workflow:', error)
+    console.error('Error updating workflow:', error);
     return NextResponse.json(
       { error: 'Failed to update workflow' },
       { status: 500 }
-    )
+    );
   }
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
   try {
-    const { id } = params
+    const user = await getCurrentUser();
 
-    // Delete workflow - in real app, this would delete from database
-    return NextResponse.json({ 
-      message: 'Workflow deleted successfully' 
-    })
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { id } = params;
+
+    // Check if workflow exists and belongs to user
+    const existingWorkflow = await prisma.workflow.findFirst({
+      where: {
+        id,
+        userId: user.userId as string,
+      },
+    });
+
+    if (!existingWorkflow) {
+      return NextResponse.json(
+        { error: 'Workflow not found' },
+        { status: 404 }
+      );
+    }
+
+    // Delete workflow (cascade will delete nodes and edges)
+    await prisma.workflow.delete({
+      where: { id },
+    });
+
+    return NextResponse.json({
+      message: 'Workflow deleted successfully',
+    });
   } catch (error) {
-    console.error('Error deleting workflow:', error)
+    console.error('Error deleting workflow:', error);
     return NextResponse.json(
       { error: 'Failed to delete workflow' },
       { status: 500 }
-    )
+    );
   }
 }
