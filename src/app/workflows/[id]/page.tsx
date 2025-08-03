@@ -46,8 +46,6 @@ import { useElkLayout } from '@/hooks/useElkLayout';
 import { useWorkflow, useUpdateWorkflow } from '@/hooks/useWorkflows';
 import { toast } from 'sonner';
 
-
-
 interface ExecutionLog {
   id: string;
   workflowId: string;
@@ -127,8 +125,6 @@ export default function WorkflowDetailPage() {
       setEdges(eds => addEdge({ ...params, type: 'custom' }, eds) as any),
     [setEdges]
   );
-
-
 
   const autoLayout = useCallback(async () => {
     const { nodes: layoutedNodes, edges: layoutedEdges } = await applyLayout(
