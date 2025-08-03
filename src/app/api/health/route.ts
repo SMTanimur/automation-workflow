@@ -1,5 +1,10 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from 'next/server';
 
 export async function GET() {
-  return NextResponse.json({ message: "Good!" });
+  console.log('Health check route called');
+  return NextResponse.json({ 
+    status: 'ok', 
+    message: 'API is working',
+    timestamp: new Date().toISOString()
+  });
 }
