@@ -22,24 +22,35 @@ const loginSchema = z.object({
   rememberMe: z.boolean().optional(),
 });
 
-const registerSchema = z.object({
-  name: z.string().min(2, 'Name must be at least 2 characters'),
-  email: z.string().email('Invalid email address'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
-  confirmPassword: z.string(),
-  companyName: z.string().optional(),
-  agreeToTerms: z.boolean().refine(val => val === true, 'You must agree to the terms'),
-}).refine((data) => data.password === data.confirmPassword, {
-  message: "Passwords don't match",
-  path: ["confirmPassword"],
-});
+const registerSchema = z
+  .object({
+    name: z.string().min(2, 'Name must be at least 2 characters'),
+    email: z.string().email('Invalid email address'),
+    password: z.string().min(6, 'Password must be at least 6 characters'),
+    confirmPassword: z.string(),
+    companyName: z.string().optional(),
+    agreeToTerms: z
+      .boolean()
+      .refine(val => val === true, 'You must agree to the terms'),
+  })
+  .refine(data => data.password === data.confirmPassword, {
+    message: "Passwords don't match",
+    path: ['confirmPassword'],
+  });
 
 type LoginFormData = z.infer<typeof loginSchema>;
 type RegisterFormData = z.infer<typeof registerSchema>;
 
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
-  const { login, loginLoading, loginError, register, registerLoading, registerError } = useAuth();
+  const {
+    login,
+    loginLoading,
+    loginError,
+    register,
+    registerLoading,
+    registerError,
+  } = useAuth();
 
   const loginForm = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
@@ -64,7 +75,7 @@ export default function LoginPage() {
 
   const handleLogin = (data: LoginFormData) => {
     login(data, {
-      onError: (error) => {
+      onError: error => {
         toast.error(error.message);
       },
     });
@@ -73,7 +84,7 @@ export default function LoginPage() {
   const handleRegister = (data: RegisterFormData) => {
     const { confirmPassword, agreeToTerms, ...registerData } = data;
     register(registerData, {
-      onError: (error) => {
+      onError: error => {
         toast.error(error.message);
       },
     });
@@ -109,7 +120,10 @@ export default function LoginPage() {
                 </p>
               </CardHeader>
               <CardContent>
-                <form onSubmit={loginForm.handleSubmit(handleLogin)} className='space-y-4'>
+                <form
+                  onSubmit={loginForm.handleSubmit(handleLogin)}
+                  className='space-y-4'
+                >
                   <div className='space-y-2'>
                     <Label htmlFor='email'>Email Address</Label>
                     <div className='relative'>
@@ -177,7 +191,11 @@ export default function LoginPage() {
                     </Link>
                   </div>
 
-                  <Button type='submit' className='w-full' disabled={loginLoading}>
+                  <Button
+                    type='submit'
+                    className='w-full'
+                    disabled={loginLoading}
+                  >
                     {loginLoading ? 'Signing In...' : 'Sign In'}
                   </Button>
                 </form>
@@ -227,6 +245,64 @@ export default function LoginPage() {
                       GitHub
                     </Button>
                   </div>
+
+                  {/* Demo User Login Buttons */}
+                  <div className='mt-6'>
+                    <div className='relative'>
+                      <div className='absolute inset-0 flex items-center'>
+                        <div className='w-full border-t border-gray-300' />
+                      </div>
+                      <div className='relative flex justify-center text-sm'>
+                        <span className='px-2 bg-white text-gray-500'>
+                          Demo Accounts
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className='mt-4 space-y-3'>
+                      <Button
+                        variant='outline'
+                        className='w-full bg-blue-50 border-blue-200 hover:bg-blue-100'
+                        onClick={() => {
+                          loginForm.setValue('email', 'demo@example.com');
+                          loginForm.setValue('password', 'password123');
+                          loginForm.handleSubmit(handleLogin)();
+                        }}
+                        disabled={loginLoading}
+                      >
+                        <User className='w-4 h-4 mr-2' />
+                        Demo User (demo@example.com)
+                      </Button>
+
+                      <Button
+                        variant='outline'
+                        className='w-full bg-green-50 border-green-200 hover:bg-green-100'
+                        onClick={() => {
+                          loginForm.setValue('email', 'admin@example.com');
+                          loginForm.setValue('password', 'admin123');
+                          loginForm.handleSubmit(handleLogin)();
+                        }}
+                        disabled={loginLoading}
+                      >
+                        <User className='w-4 h-4 mr-2' />
+                        Admin User (admin@example.com)
+                      </Button>
+
+                      <Button
+                        variant='outline'
+                        className='w-full bg-purple-50 border-purple-200 hover:bg-purple-100'
+                        onClick={() => {
+                          loginForm.setValue('email', 'test@example.com');
+                          loginForm.setValue('password', 'test123');
+                          loginForm.handleSubmit(handleLogin)();
+                        }}
+                        disabled={loginLoading}
+                      >
+                        <User className='w-4 h-4 mr-2' />
+                        Test User (test@example.com)
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               </CardContent>
             </TabsContent>
@@ -242,7 +318,10 @@ export default function LoginPage() {
                 </p>
               </CardHeader>
               <CardContent>
-                <form onSubmit={registerForm.handleSubmit(handleRegister)} className='space-y-4'>
+                <form
+                  onSubmit={registerForm.handleSubmit(handleRegister)}
+                  className='space-y-4'
+                >
                   <div className='space-y-2'>
                     <Label htmlFor='name'>Full Name</Label>
                     <div className='relative'>
@@ -338,7 +417,10 @@ export default function LoginPage() {
                       />
                       {registerForm.formState.errors.confirmPassword && (
                         <p className='text-sm text-red-500 mt-1'>
-                          {registerForm.formState.errors.confirmPassword.message}
+                          {
+                            registerForm.formState.errors.confirmPassword
+                              .message
+                          }
                         </p>
                       )}
                     </div>
@@ -372,7 +454,11 @@ export default function LoginPage() {
                     </p>
                   )}
 
-                  <Button type='submit' className='w-full' disabled={registerLoading}>
+                  <Button
+                    type='submit'
+                    className='w-full'
+                    disabled={registerLoading}
+                  >
                     {registerLoading ? 'Creating Account...' : 'Create Account'}
                   </Button>
                 </form>

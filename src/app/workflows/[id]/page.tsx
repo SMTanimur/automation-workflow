@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,21 +17,8 @@ import {
 } from '@/components/ui/select';
 import {
   Play,
-  Square,
   Settings,
   Mail,
-  Clock,
-  GitBranch,
-  Plus,
-  Trash2,
-  Type,
-  Image as ImageIcon,
-  Layout,
-  Columns,
-  Eye,
-  Code,
-  Palette,
-  Sparkles,
   ArrowLeft,
   Save,
   BarChart3,
@@ -39,33 +26,27 @@ import {
   Calendar,
   Users,
 } from 'lucide-react';
+import {
+  ReactFlow,
+  addEdge,
+  useNodesState,
+  useEdgesState,
+  Connection,
+  Edge,
+  Node,
+  Controls,
+  Background,
+  MiniMap,
+  Panel,
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
 import Link from 'next/link';
+import { nodeTypes, edgeTypes } from '@/components/workflow/CustomNodes';
+import { useElkLayout } from '@/hooks/useElkLayout';
+import { useWorkflow, useUpdateWorkflow } from '@/hooks/useWorkflows';
+import { toast } from 'sonner';
 
-interface Node {
-  id: string;
-  type: 'trigger' | 'email' | 'delay' | 'condition' | 'action' | 'end';
-  position: { x: number; y: number };
-  data: any;
-}
 
-interface Edge {
-  id: string;
-  source: string;
-  target: string;
-}
-
-interface Workflow {
-  id: string;
-  name: string;
-  description: string;
-  isActive: boolean;
-  createdAt: string;
-  lastRun?: string;
-  totalRuns: number;
-  successRate: number;
-  nodes: Node[];
-  edges: Edge[];
-}
 
 interface ExecutionLog {
   id: string;
@@ -81,39 +62,53 @@ export default function WorkflowDetailPage() {
   const params = useParams();
   const workflowId = params.id as string;
 
-  const [workflow, setWorkflow] = useState<Workflow | null>(null);
-  const [nodes, setNodes] = useState<Node[]>([]);
-  const [edges, setEdges] = useState<Edge[]>([]);
-  const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [workflowName, setWorkflowName] = useState('');
   const [workflowDescription, setWorkflowDescription] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [activeTab, setActiveTab] = useState('builder');
   const [executionLogs, setExecutionLogs] = useState<ExecutionLog[]>([]);
 
+  // React Flow state
+  const [nodes, setNodes, onNodesChange] = useNodesState([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+
+  // Hooks
+  const { data: workflowData, isLoading } = useWorkflow(workflowId);
+  const updateWorkflowMutation = useUpdateWorkflow();
+  const { applyLayout } = useElkLayout();
+
+  // Initialize workflow data
   useEffect(() => {
-    fetchWorkflow();
+    if (workflowData?.workflow) {
+      const workflow = workflowData.workflow;
+      setWorkflowName(workflow.name);
+      setWorkflowDescription(workflow.description || '');
+
+      // Transform nodes for React Flow
+      const transformedNodes = workflow.nodes.map((node: any) => ({
+        ...node,
+        position: node.position || { x: 0, y: 0 },
+        data: {
+          ...node.data,
+          label: node.data?.label || node.name || 'Node',
+        },
+      }));
+
+      // Transform edges for React Flow
+      const transformedEdges = workflow.edges.map((edge: any) => ({
+        ...edge,
+        type: 'custom',
+      }));
+
+      setNodes(transformedNodes as any);
+      setEdges(transformedEdges as any);
+    }
+  }, [workflowData, setNodes, setEdges]);
+
+  // Fetch execution logs
+  useEffect(() => {
     fetchExecutionLogs();
   }, [workflowId]);
-
-  const fetchWorkflow = async () => {
-    try {
-      const response = await fetch(`/api/workflows/${workflowId}`);
-      if (response.ok) {
-        const data = await response.json();
-        const workflowData = data.workflow;
-        setWorkflow(workflowData);
-        setNodes(workflowData.nodes || []);
-        setEdges(workflowData.edges || []);
-        setWorkflowName(workflowData.name);
-        setWorkflowDescription(workflowData.description);
-      }
-    } catch (error) {
-      console.error('Error fetching workflow:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const fetchExecutionLogs = async () => {
     try {
@@ -127,26 +122,48 @@ export default function WorkflowDetailPage() {
     }
   };
 
+  const onConnect = useCallback(
+    (params: Connection) =>
+      setEdges(eds => addEdge({ ...params, type: 'custom' }, eds) as any),
+    [setEdges]
+  );
+
+
+
+  const autoLayout = useCallback(async () => {
+    const { nodes: layoutedNodes, edges: layoutedEdges } = await applyLayout(
+      nodes,
+      edges
+    );
+    setNodes(layoutedNodes as any);
+    setEdges(layoutedEdges as any);
+    toast.success('Layout applied successfully');
+  }, [nodes, edges, applyLayout, setNodes, setEdges]);
+
   const saveWorkflow = async () => {
     try {
-      const response = await fetch(`/api/workflows/${workflowId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          name: workflowName,
-          description: workflowDescription,
-          nodes,
-          edges,
-        }),
-      });
+      const workflowData = {
+        name: workflowName,
+        description: workflowDescription,
+        nodes: nodes.map((node: any) => ({
+          type: node.type,
+          position: node.position,
+          data: node.data,
+        })),
+        edges: edges.map((edge: any) => ({
+          source: edge.source,
+          target: edge.target,
+          type: edge.type,
+        })),
+      };
 
-      if (response.ok) {
-        fetchWorkflow(); // Refresh the data
-      }
+      await updateWorkflowMutation.mutateAsync({
+        id: workflowId,
+        data: workflowData,
+      });
+      toast.success('Workflow saved successfully');
     } catch (error) {
-      console.error('Error saving workflow:', error);
+      toast.error('Failed to save workflow');
     }
   };
 
@@ -157,112 +174,15 @@ export default function WorkflowDetailPage() {
       });
 
       if (response.ok) {
-        fetchExecutionLogs(); // Refresh logs
+        fetchExecutionLogs();
+        toast.success('Workflow executed successfully');
       }
     } catch (error) {
-      console.error('Error executing workflow:', error);
+      toast.error('Failed to execute workflow');
     }
   };
 
-  const nodeTypes = {
-    trigger: { icon: Play, color: 'bg-green-500', label: 'Trigger' },
-    email: { icon: Mail, color: 'bg-blue-500', label: 'Email' },
-    delay: { icon: Clock, color: 'bg-yellow-500', label: 'Delay' },
-    condition: { icon: GitBranch, color: 'bg-purple-500', label: 'Condition' },
-    action: { icon: Settings, color: 'bg-orange-500', label: 'Action' },
-    end: { icon: Square, color: 'bg-red-500', label: 'End' },
-  };
-
-  const addNode = (type: Node['type']) => {
-    const newNode: Node = {
-      id: `${nodes.length + 1}`,
-      type,
-      position: { x: 100 + nodes.length * 200, y: 200 },
-      data: { label: `${nodeTypes[type].label} ${nodes.length + 1}` },
-    };
-    setNodes([...nodes, newNode]);
-  };
-
-  const deleteNode = (nodeId: string) => {
-    setNodes(nodes.filter(node => node.id !== nodeId));
-    setEdges(
-      edges.filter(edge => edge.source !== nodeId && edge.target !== nodeId)
-    );
-    if (selectedNode?.id === nodeId) {
-      setSelectedNode(null);
-    }
-  };
-
-  const renderNode = (node: Node) => {
-    const nodeType = nodeTypes[node.type];
-    const Icon = nodeType.icon;
-    const isSelected = selectedNode?.id === node.id;
-
-    return (
-      <div
-        key={node.id}
-        className={`absolute cursor-pointer transition-all duration-200 ${
-          isSelected ? 'ring-2 ring-blue-400 ring-offset-2' : ''
-        }`}
-        style={{ left: node.position.x, top: node.position.y }}
-        onClick={() => setSelectedNode(node)}
-      >
-        <div
-          className={`${nodeType.color} rounded-lg p-4 shadow-lg min-w-[120px]`}
-        >
-          <div className='flex items-center justify-between mb-2'>
-            <Icon className='w-5 h-5 text-white' />
-            <Button
-              variant='ghost'
-              size='sm'
-              className='h-6 w-6 p-0 text-white hover:text-red-200'
-              onClick={e => {
-                e.stopPropagation();
-                deleteNode(node.id);
-              }}
-            >
-              <Trash2 className='w-3 h-3' />
-            </Button>
-          </div>
-          <div className='text-white text-sm font-medium text-center'>
-            {node.data.label}
-          </div>
-        </div>
-        <div className='absolute -bottom-2 left-1/2 transform -translate-x-1/2 w-4 h-4 bg-gray-400 rounded-full'></div>
-      </div>
-    );
-  };
-
-  const renderEdge = (edge: Edge) => {
-    const sourceNode = nodes.find(n => n.id === edge.source);
-    const targetNode = nodes.find(n => n.id === edge.target);
-
-    if (!sourceNode || !targetNode) return null;
-
-    const sourceX = sourceNode.position.x + 60;
-    const sourceY = sourceNode.position.y + 80;
-    const targetX = targetNode.position.x + 60;
-    const targetY = targetNode.position.y;
-
-    return (
-      <svg
-        key={edge.id}
-        className='absolute top-0 left-0 w-full h-full pointer-events-none'
-      >
-        <line
-          x1={sourceX}
-          y1={sourceY}
-          x2={targetX}
-          y2={targetY}
-          stroke='#6B7280'
-          strokeWidth='2'
-          markerEnd='url(#arrowhead)'
-        />
-      </svg>
-    );
-  };
-
-  if (loading) {
+  if (isLoading) {
     return (
       <div className='min-h-screen bg-gray-50 flex items-center justify-center'>
         <div className='animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600'></div>
@@ -270,7 +190,7 @@ export default function WorkflowDetailPage() {
     );
   }
 
-  if (!workflow) {
+  if (!workflowData?.workflow) {
     return (
       <div className='min-h-screen bg-gray-50 flex items-center justify-center'>
         <div className='text-center'>
@@ -284,6 +204,8 @@ export default function WorkflowDetailPage() {
       </div>
     );
   }
+
+  const workflow = workflowData.workflow;
 
   return (
     <div className='min-h-screen bg-gray-50'>
@@ -343,13 +265,13 @@ export default function WorkflowDetailPage() {
             <BarChart3 className='w-4 h-4 text-gray-500' />
             <span className='text-gray-600'>Total runs:</span>
             <span className='font-medium'>
-              {workflow.totalRuns.toLocaleString()}
+              {(workflow.totalRuns || 0).toLocaleString()}
             </span>
           </div>
           <div className='flex items-center gap-2'>
             <Users className='w-4 h-4 text-gray-500' />
             <span className='text-gray-600'>Success rate:</span>
-            <span className='font-medium'>{workflow.successRate}%</span>
+            <span className='font-medium'>{workflow.successRate || 0}%</span>
           </div>
         </div>
       </div>
@@ -369,17 +291,44 @@ export default function WorkflowDetailPage() {
             <div className='w-64 bg-white border-r border-gray-200 p-4'>
               <h3 className='font-semibold text-gray-900 mb-4'>Add Nodes</h3>
               <div className='space-y-2'>
-                {Object.entries(nodeTypes).map(([type, config]) => (
-                  <Button
-                    key={type}
-                    variant='outline'
-                    className='w-full justify-start gap-2'
-                    onClick={() => addNode(type as Node['type'])}
-                  >
-                    <config.icon className='w-4 h-4' />
-                    {config.label}
-                  </Button>
-                ))}
+                <Button
+                  variant='outline'
+                  className='w-full justify-start gap-2'
+                  onClick={() => {
+                    const newNode: Node = {
+                      id: `email-${Date.now()}`,
+                      type: 'email',
+                      position: {
+                        x: Math.random() * 400,
+                        y: Math.random() * 400,
+                      },
+                      data: { label: 'Email Node', type: 'email' },
+                    };
+                    setNodes(nds => [...nds, newNode] as any);
+                  }}
+                >
+                  <Mail className='w-4 h-4' />
+                  Email
+                </Button>
+                <Button
+                  variant='outline'
+                  className='w-full justify-start gap-2'
+                  onClick={() => {
+                    const newNode: Node = {
+                      id: `condition-${Date.now()}`,
+                      type: 'condition',
+                      position: {
+                        x: Math.random() * 400,
+                        y: Math.random() * 400,
+                      },
+                      data: { label: 'Condition Node', type: 'condition' },
+                    };
+                    setNodes(nds => [...nds, newNode] as any);
+                  }}
+                >
+                  <Settings className='w-4 h-4' />
+                  Condition
+                </Button>
               </div>
 
               <div className='mt-6'>
@@ -410,34 +359,42 @@ export default function WorkflowDetailPage() {
                   </div>
                 </div>
               </div>
+
+              <div className='mt-6'>
+                <Button
+                  onClick={autoLayout}
+                  variant='outline'
+                  className='w-full'
+                >
+                  Auto Layout
+                </Button>
+              </div>
             </div>
 
             {/* Main Canvas */}
-            <div className='flex-1 relative bg-gray-100 overflow-hidden'>
-              <div className='relative w-full h-full'>
-                {/* Grid background */}
-                <div className='absolute inset-0 bg-grid-gray-300 [mask-image:linear-gradient(0deg,#fff,rgba(255,255,255,0.6))]'></div>
-
-                {/* Edges */}
-                <svg className='absolute top-0 left-0 w-full h-full pointer-events-none'>
-                  <defs>
-                    <marker
-                      id='arrowhead'
-                      markerWidth='10'
-                      markerHeight='7'
-                      refX='9'
-                      refY='3.5'
-                      orient='auto'
-                    >
-                      <polygon points='0 0, 10 3.5, 0 7' fill='#6B7280' />
-                    </marker>
-                  </defs>
-                </svg>
-                {edges.map(renderEdge)}
-
-                {/* Nodes */}
-                {nodes.map(renderNode)}
-              </div>
+            <div className='flex-1 relative bg-gray-100'>
+              <ReactFlow
+                nodes={nodes}
+                edges={edges}
+                onNodesChange={onNodesChange}
+                onEdgesChange={onEdgesChange}
+                onConnect={onConnect}
+                nodeTypes={nodeTypes}
+                edgeTypes={edgeTypes}
+                fitView
+                className='bg-gray-50'
+              >
+                <Controls />
+                <Background />
+                <MiniMap />
+                <Panel position='top-right'>
+                  <div className='bg-white p-2 rounded shadow'>
+                    <div className='text-xs text-gray-600'>
+                      {workflowName || 'Untitled Workflow'}
+                    </div>
+                  </div>
+                </Panel>
+              </ReactFlow>
             </div>
 
             {/* Right Sidebar - Node Configuration */}
@@ -448,9 +405,7 @@ export default function WorkflowDetailPage() {
                     <h3 className='font-semibold text-gray-900'>
                       Node Configuration
                     </h3>
-                    <Badge className={nodeTypes[selectedNode.type].color}>
-                      {nodeTypes[selectedNode.type].label}
-                    </Badge>
+                    <Badge className='bg-blue-500'>{selectedNode.type}</Badge>
                   </div>
 
                   <Tabs defaultValue='general' className='w-full'>
@@ -465,9 +420,9 @@ export default function WorkflowDetailPage() {
                           Label
                         </label>
                         <Input
-                          value={selectedNode.data.label}
+                          value={selectedNode.data?.label as string}
                           onChange={e => {
-                            const updatedNodes = nodes.map(node =>
+                            const updatedNodes = nodes.map((node: any) =>
                               node.id === selectedNode.id
                                 ? {
                                     ...node,
@@ -478,7 +433,7 @@ export default function WorkflowDetailPage() {
                                   }
                                 : node
                             );
-                            setNodes(updatedNodes);
+                            setNodes(updatedNodes as any);
                             setSelectedNode(
                               updatedNodes.find(
                                 n => n.id === selectedNode.id
@@ -506,27 +461,6 @@ export default function WorkflowDetailPage() {
                               Create New Template
                             </Button>
                           </Link>
-                        </div>
-                      )}
-
-                      {selectedNode.type === 'delay' && (
-                        <div>
-                          <label className='block text-sm font-medium text-gray-700 mb-1'>
-                            Delay Duration
-                          </label>
-                          <div className='flex gap-2'>
-                            <Input
-                              type='number'
-                              placeholder='1'
-                              className='w-20'
-                            />
-                            <select className='flex-1 p-2 border border-gray-300 rounded-md'>
-                              <option>minutes</option>
-                              <option>hours</option>
-                              <option>days</option>
-                              <option>weeks</option>
-                            </select>
-                          </div>
                         </div>
                       )}
                     </TabsContent>

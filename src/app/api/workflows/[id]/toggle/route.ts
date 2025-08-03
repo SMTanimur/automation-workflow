@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
 
-export async function GET(
+export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
@@ -16,29 +16,42 @@ export async function GET(
     const { id } = params;
 
     // Check if workflow exists and belongs to user
-    const workflow = await prisma.workflow.findFirst({
+    const existingWorkflow = await prisma.workflow.findFirst({
       where: {
         id,
         userId: user.userId as string,
       },
     });
 
-    if (!workflow) {
+    if (!existingWorkflow) {
       return NextResponse.json(
         { error: 'Workflow not found' },
         { status: 404 }
       );
     }
 
-    // For now, return empty logs since we don't have a WorkflowLog model yet
-    // In a real application, you would fetch from a WorkflowLog table
-    const logs: any[] = [];
+    // Toggle the workflow status
+    const updatedWorkflow = await prisma.workflow.update({
+      where: { id },
+      data: {
+        isActive: !existingWorkflow.isActive,
+      },
+    });
 
-    return NextResponse.json({ logs });
+    return NextResponse.json({
+      message: `Workflow ${
+        updatedWorkflow.isActive ? 'activated' : 'deactivated'
+      } successfully`,
+      workflow: {
+        id: updatedWorkflow.id,
+        name: updatedWorkflow.name,
+        isActive: updatedWorkflow.isActive,
+      },
+    });
   } catch (error) {
-    console.error('Error fetching execution logs:', error);
+    console.error('Error toggling workflow status:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch execution logs' },
+      { error: 'Failed to toggle workflow status' },
       { status: 500 }
     );
   }
