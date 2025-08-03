@@ -12,6 +12,7 @@ interface ReactEmailEditorProps {
 export interface ReactEmailEditorRef {
   editor: any;
   saveDesign: () => Promise<{ design: any; html: string }>;
+  autoSave: () => Promise<{ design: any; html: string }>;
   exportHtml: () => Promise<string>;
   loadDesign: (design: any) => void;
 }
@@ -31,6 +32,21 @@ const ReactEmailEditor = forwardRef<ReactEmailEditorRef, ReactEmailEditorProps>(
             unlayer.saveDesign((design: any) => {
               unlayer.exportHtml((data: any) => {
                 const result = { design, html: data.html };
+                console.log('saveDesign result:', result);
+                resolve(result);
+              });
+            });
+          }
+        });
+      },
+      autoSave: () => {
+        return new Promise(resolve => {
+          const unlayer = emailEditorRef.current?.editor;
+          if (unlayer) {
+            unlayer.saveDesign((design: any) => {
+              unlayer.exportHtml((data: any) => {
+                const result = { design, html: data.html };
+                console.log('autoSave result:', result);
                 onSave?.(result);
                 resolve(result);
               });
@@ -61,7 +77,10 @@ const ReactEmailEditor = forwardRef<ReactEmailEditorRef, ReactEmailEditorProps>(
 
       // Load existing design if available
       if (initialDesign) {
+        console.log('Loading initial design:', initialDesign);
         unlayer?.loadDesign(initialDesign);
+      } else {
+        console.log('No initial design provided');
       }
 
       onLoad?.();

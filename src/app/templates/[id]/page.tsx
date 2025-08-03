@@ -37,12 +37,19 @@ import ReactEmailEditor, {
   ReactEmailEditorRef,
 } from '@/components/ReactEmailEditor';
 import Link from 'next/link';
+import {
+  useEmailTemplate,
+  useUpdateEmailTemplate,
+  useDeleteEmailTemplate,
+  useDuplicateEmailTemplate,
+} from '@/hooks/useEmailTemplates';
+import { useToast } from '@/hooks/use-toast';
 
 interface EmailTemplate {
   id: string;
   name: string;
   subject: string;
-  previewText: string;
+  previewText?: string;
   category: string;
   design?: any;
   html?: string;
@@ -56,9 +63,8 @@ export default function EditTemplatePage() {
   const params = useParams<{ id: string }>();
   const templateId = params.id as string;
   const router = useRouter();
+  const { toast } = useToast();
 
-  const [template, setTemplate] = useState<EmailTemplate | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [activeTab, setActiveTab] = useState('editor');
   const [saveStatus, setSaveStatus] = useState<
@@ -67,9 +73,16 @@ export default function EditTemplatePage() {
   const [editorLoaded, setEditorLoaded] = useState(false);
   const [autoSave, setAutoSave] = useState(true);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
-  const [loading, setLoading] = useState(true);
 
   const emailEditorRef = useRef<ReactEmailEditorRef>(null);
+
+  // Use React Query hooks
+  const { data, isLoading, error } = useEmailTemplate(templateId);
+  const updateTemplateMutation = useUpdateEmailTemplate();
+  const deleteTemplateMutation = useDeleteEmailTemplate();
+  const duplicateTemplateMutation = useDuplicateEmailTemplate();
+
+  const template = data?.template;
 
   const categories = [
     {
@@ -104,65 +117,38 @@ export default function EditTemplatePage() {
     },
   ];
 
-  useEffect(() => {
-    fetchTemplate();
-  }, [templateId]);
-
-  const fetchTemplate = async () => {
-    try {
-      const response = await fetch(`/api/email-templates/${templateId}`);
-      if (response.ok) {
-        const data = await response.json();
-        setTemplate(data.template);
-      }
-    } catch (error) {
-      console.error('Error fetching template:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleSaveDesign = async (data: any) => {
     if (!template || !template.name?.trim()) {
       setSaveStatus('error');
       return;
     }
 
-    setIsSaving(true);
+    console.log('Saving design data:', data);
+
     setSaveStatus('saving');
 
     try {
-      const templateData = {
-        ...template,
-        design: data.design,
-        html: data.html,
-        updatedAt: new Date().toISOString(),
-      };
-
-      const response = await fetch(`/api/email-templates/${templateId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
+      await updateTemplateMutation.mutateAsync({
+        id: templateId,
+        data: {
+          design: data.design,
+          html: data.html,
         },
-        body: JSON.stringify(templateData),
       });
 
-      if (response.ok) {
-        const savedTemplate = await response.json();
-        setTemplate(savedTemplate);
-        setSaveStatus('success');
-        setLastSaved(new Date());
+      setSaveStatus('success');
+      setLastSaved(new Date());
 
-        // Reset status after 2 seconds
-        setTimeout(() => setSaveStatus('idle'), 2000);
-      } else {
-        setSaveStatus('error');
-      }
+      // Reset status after 2 seconds
+      setTimeout(() => setSaveStatus('idle'), 2000);
     } catch (error) {
       console.error('Error saving template:', error);
       setSaveStatus('error');
-    } finally {
-      setIsSaving(false);
+      toast({
+        title: 'Error',
+        description: 'Failed to save template',
+        variant: 'destructive',
+      });
     }
   };
 
@@ -191,22 +177,24 @@ export default function EditTemplatePage() {
     if (!template) return;
 
     try {
-      const response = await fetch(`/api/email-templates/${templateId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          ...template,
-          status: 'published',
-        }),
+      await updateTemplateMutation.mutateAsync({
+        id: templateId,
+        data: { status: 'published' },
       });
 
-      if (response.ok) {
-        router.push('/templates');
-      }
+      toast({
+        title: 'Success',
+        description: 'Template published successfully',
+      });
+
+      router.push('/templates');
     } catch (error) {
       console.error('Error publishing template:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to publish template',
+        variant: 'destructive',
+      });
     }
   };
 
@@ -215,15 +203,19 @@ export default function EditTemplatePage() {
       return;
 
     try {
-      const response = await fetch(`/api/email-templates/${templateId}`, {
-        method: 'DELETE',
+      await deleteTemplateMutation.mutateAsync(templateId);
+      toast({
+        title: 'Success',
+        description: 'Template deleted successfully',
       });
-
-      if (response.ok) {
-        router.push('/templates');
-      }
+      router.push('/templates');
     } catch (error) {
       console.error('Error deleting template:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to delete template',
+        variant: 'destructive',
+      });
     }
   };
 
@@ -231,18 +223,19 @@ export default function EditTemplatePage() {
     if (!template) return;
 
     try {
-      const response = await fetch(
-        `/api/email-templates/${templateId}/duplicate`,
-        {
-          method: 'POST',
-        }
-      );
-
-      if (response.ok) {
-        router.push('/templates');
-      }
+      await duplicateTemplateMutation.mutateAsync(templateId);
+      toast({
+        title: 'Success',
+        description: 'Template duplicated successfully',
+      });
+      router.push('/templates');
     } catch (error) {
       console.error('Error duplicating template:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to duplicate template',
+        variant: 'destructive',
+      });
     }
   };
 
@@ -261,11 +254,18 @@ export default function EditTemplatePage() {
       });
 
       if (response.ok) {
-        alert('Test email sent successfully!');
+        toast({
+          title: 'Success',
+          description: 'Test email sent successfully!',
+        });
       }
     } catch (error) {
       console.error('Error sending test email:', error);
-      alert('Failed to send test email');
+      toast({
+        title: 'Error',
+        description: 'Failed to send test email',
+        variant: 'destructive',
+      });
     }
   };
 
@@ -284,7 +284,9 @@ export default function EditTemplatePage() {
       autoSaveInterval = setInterval(async () => {
         if (emailEditorRef.current) {
           try {
-            const data = await emailEditorRef.current.saveDesign();
+            console.log('Auto-saving template...');
+            const data = await emailEditorRef.current.autoSave();
+            console.log('Auto-save data:', data);
             handleSaveDesign(data);
           } catch (error) {
             console.error('Auto-save failed:', error);
@@ -300,7 +302,7 @@ export default function EditTemplatePage() {
     };
   }, [autoSave, editorLoaded, template?.name]);
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className='min-h-screen bg-gray-50 flex items-center justify-center'>
         <div className='text-center'>
@@ -311,7 +313,7 @@ export default function EditTemplatePage() {
     );
   }
 
-  if (!template) {
+  if (error || !template) {
     return (
       <div className='min-h-screen bg-gray-50 flex items-center justify-center'>
         <div className='text-center'>
@@ -397,7 +399,12 @@ export default function EditTemplatePage() {
               {autoSave ? 'Auto-save ON' : 'Auto-save OFF'}
             </Button>
 
-            <Button variant='outline' onClick={handleDuplicate} size='sm'>
+            <Button
+              variant='outline'
+              onClick={handleDuplicate}
+              size='sm'
+              disabled={duplicateTemplateMutation.isPending}
+            >
               <Copy className='w-4 h-4 mr-2' />
               Duplicate
             </Button>
@@ -412,12 +419,32 @@ export default function EditTemplatePage() {
               Export HTML
             </Button>
 
-            <Button onClick={handlePublish}>
+            <Button
+              onClick={() => {
+                if (emailEditorRef.current) {
+                  emailEditorRef.current.saveDesign().then(handleSaveDesign);
+                }
+              }}
+              disabled={updateTemplateMutation.isPending}
+            >
+              <Save className='w-4 h-4 mr-2' />
+              Save Design
+            </Button>
+
+            <Button
+              onClick={handlePublish}
+              disabled={updateTemplateMutation.isPending}
+            >
               <Save className='w-4 h-4 mr-2' />
               {template.status === 'published' ? 'Update' : 'Publish'}
             </Button>
 
-            <Button variant='destructive' onClick={handleDelete} size='sm'>
+            <Button
+              variant='destructive'
+              onClick={handleDelete}
+              size='sm'
+              disabled={deleteTemplateMutation.isPending}
+            >
               <Trash2 className='w-4 h-4' />
             </Button>
           </div>
@@ -443,7 +470,10 @@ export default function EditTemplatePage() {
                   <Input
                     value={template.name}
                     onChange={e =>
-                      setTemplate({ ...template, name: e.target.value })
+                      updateTemplateMutation.mutate({
+                        id: templateId,
+                        data: { name: e.target.value },
+                      })
                     }
                     placeholder='Enter template name'
                     className={
@@ -466,7 +496,10 @@ export default function EditTemplatePage() {
                   <Input
                     value={template.subject}
                     onChange={e =>
-                      setTemplate({ ...template, subject: e.target.value })
+                      updateTemplateMutation.mutate({
+                        id: templateId,
+                        data: { subject: e.target.value },
+                      })
                     }
                     placeholder='Enter email subject'
                   />
@@ -477,9 +510,12 @@ export default function EditTemplatePage() {
                     Preview Text
                   </label>
                   <Textarea
-                    value={template.previewText}
+                    value={template.previewText || ''}
                     onChange={e =>
-                      setTemplate({ ...template, previewText: e.target.value })
+                      updateTemplateMutation.mutate({
+                        id: templateId,
+                        data: { previewText: e.target.value },
+                      })
                     }
                     placeholder='Enter preview text (appears in email client inbox)'
                     rows={3}
@@ -493,7 +529,10 @@ export default function EditTemplatePage() {
                   <Select
                     value={template.category}
                     onValueChange={value =>
-                      setTemplate({ ...template, category: value })
+                      updateTemplateMutation.mutate({
+                        id: templateId,
+                        data: { category: value },
+                      })
                     }
                   >
                     <SelectTrigger>
@@ -520,9 +559,9 @@ export default function EditTemplatePage() {
                   <Select
                     value={template.status}
                     onValueChange={value =>
-                      setTemplate({
-                        ...template,
-                        status: value as 'draft' | 'published',
+                      updateTemplateMutation.mutate({
+                        id: templateId,
+                        data: { status: value as 'draft' | 'published' },
                       })
                     }
                   >
@@ -657,6 +696,12 @@ export default function EditTemplatePage() {
                   initialDesign={template.design}
                   height='calc(100vh - 200px)'
                 />
+                {template.design && (
+                  <div className='text-xs text-gray-500 mt-2'>
+                    Design loaded:{' '}
+                    {JSON.stringify(template.design).substring(0, 100)}...
+                  </div>
+                )}
               </div>
             </TabsContent>
 
@@ -766,6 +811,7 @@ export default function EditTemplatePage() {
                         variant='destructive'
                         className='w-full'
                         onClick={handleDelete}
+                        disabled={deleteTemplateMutation.isPending}
                       >
                         <Trash2 className='w-4 h-4 mr-2' />
                         Delete Template

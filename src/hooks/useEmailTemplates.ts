@@ -173,7 +173,7 @@ export function useDuplicateEmailTemplate() {
 
   return useMutation({
     mutationFn: async (id: string) => {
-      const response = await fetch(`/api/email-templates/${id}/duplicate`, {
+      const response = await fetch(`/api/email-templates/${id}`, {
         method: 'POST',
       });
 

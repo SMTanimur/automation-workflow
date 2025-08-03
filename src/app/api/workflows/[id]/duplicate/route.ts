@@ -2,28 +2,31 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
 
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
     const user = await getCurrentUser();
-    
+
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { id } = params;
+    const { id } = await params;
 
     // Get the original workflow with nodes and edges
     const originalWorkflow = await prisma.workflow.findFirst({
-      where: { 
+      where: {
         id,
-        userId: user.userId as string 
+        userId: user.userId as string,
       },
       include: {
         nodes: true,
         edges: true,
       },
     });
-    
+
     if (!originalWorkflow) {
       return NextResponse.json(
         { error: 'Workflow not found' },
@@ -60,7 +63,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     for (const edge of originalWorkflow.edges) {
       const newSourceId = nodeMap.get(edge.sourceId);
       const newTargetId = nodeMap.get(edge.targetId);
-      
+
       if (newSourceId && newTargetId) {
         await prisma.edge.create({
           data: {
@@ -104,9 +107,9 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       })),
     };
 
-    return NextResponse.json({ 
+    return NextResponse.json({
       message: 'Workflow duplicated successfully',
-      workflow: transformedWorkflow 
+      workflow: transformedWorkflow,
     });
   } catch (error) {
     console.error('Error duplicating workflow:', error);
@@ -115,4 +118,4 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       { status: 500 }
     );
   }
-} 
+}
