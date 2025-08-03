@@ -9,7 +9,13 @@
     "lint": "next lint",
     "db:push": "prisma db push",
     "db:seed": "bun prisma/seed.ts",
-    "db:push:seed": "prisma db push && bun prisma/seed.ts"
+    "db:push:seed": "prisma db push && bun prisma/seed.ts",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:studio": "prisma studio",
+    "db:reset": "prisma migrate reset",
+    "db:push:generate": "prisma db push && prisma generate"
   },
   "prisma": {
     "seed": "bun prisma/seed.ts"
@@ -44,10 +50,12 @@
     "@tanstack/react-query": "^5.84.1",
     "@tanstack/react-query-devtools": "^5.84.1",
     "@tanstack/react-table": "^8.10.7",
+    "@xyflow/react": "^12.8.2",
     "bcryptjs": "^3.0.2",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.0.0",
     "date-fns": "^2.30.0",
+    "elkjs": "^0.10.0",
     "framer-motion": "^10.16.16",
     "jsonwebtoken": "^9.0.2",
     "lucide-react": "^0.298.0",
